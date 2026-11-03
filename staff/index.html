@@ -109,8 +109,11 @@
 
   <div class="served-log-section">
     <div class="served-log-header">
-      <h3>📋 Today's Served Orders</h3>
-      <span class="served-count" id="servedCount">0 served</span>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <h3>📋 Today's Served Orders</h3>
+        <span class="served-count" id="servedCount">0 served</span>
+      </div>
+      <button class="clear-log-btn" onclick="clearAllServedHistory()" title="Clear and delete served orders history">🗑️ Clear All Served Data</button>
     </div>
     <div id="servedLog" class="served-log"></div>
   </div>

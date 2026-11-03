@@ -240,20 +240,45 @@ function confirmPayment() {
     return { id:item.id, name:item.name, emoji:item.emoji, qty, price:item.price };
   });
   const gst = subtotal*0.05, total = subtotal+gst;
+
+  // Build compact self-contained QR payload for cross-device scanning on GitHub Pages
+  const qrPayload = JSON.stringify({
+    cb: "1",
+    id: orderId,
+    s: currentStudent.name || 'Student',
+    r: currentStudent.rollNo || '',
+    items: orderItems.map(i => ({ n: i.name, e: i.emoji, q: i.qty, p: i.price })),
+    tot: Math.round(total),
+    t: new Date().toISOString()
+  });
+
   const payload = {
-    orderId, student: currentStudent.name||'Student',
+    orderId,
+    student: currentStudent.name || 'Student',
     studentUsername: currentStudent.username,
-    studentRollNo:   currentStudent.rollNo||'',
-    items: orderItems, subtotal, gst, total,
-    placedAt: new Date().toISOString(), status:'pending',
+    studentRollNo:   currentStudent.rollNo || '',
+    items: orderItems,
+    subtotal, gst, total,
+    placedAt: new Date().toISOString(),
+    status: 'pending',
+    qrData: qrPayload
   };
+
   localStorage.setItem(`order_${orderId}`, JSON.stringify(payload));
   closeModal('paymentModal');
-  document.getElementById('orderQRCode').innerHTML = '';
-  new QRCode(document.getElementById('orderQRCode'), {
-    text: orderId, width:200, height:200,
-    colorDark:'#2d3748', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.H,
+
+  // Generate ORDER QR (encodes self-contained payload)
+  const qrBox = document.getElementById('orderQRCode');
+  qrBox.innerHTML = '';
+  new QRCode(qrBox, {
+    text: qrPayload,
+    width: 220,
+    height: 220,
+    colorDark: '#1a202c',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.M,
   });
+
   document.getElementById('orderIdDisplay').textContent = `Order ID: ${orderId}`;
   document.getElementById('orderItemsRecap').innerHTML  = orderItems.map(i => `${i.emoji} ${i.name} × ${i.qty}`).join('<br>');
   document.getElementById('successModal').style.display = 'flex';

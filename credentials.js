@@ -14,13 +14,7 @@ const STAFF_CREDENTIALS = [
     role: "Head Counter Staff",
     avatar: "👨‍🍳"
   },
-  {
-    username: "waiter1", // Alias for backward compatibility
-    password: "canteen@123",
-    name: "Ramesh Kumar",
-    role: "Head Counter Staff",
-    avatar: "👨‍🍳"
-  },
+
   {
     username: "staff2",
     password: "serve@456",
