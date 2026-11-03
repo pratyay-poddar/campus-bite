@@ -124,6 +124,11 @@ func (s *Store) MarkServed(id string, servedBy string) (Order, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if servedBy == "" {
+		servedBy = "Staff"
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+
 	// If already in served
 	if o, ok := s.servedOrders[id]; ok {
 		return o, true
@@ -133,18 +138,24 @@ func (s *Store) MarkServed(id string, servedBy string) (Order, bool) {
 	if o, ok := s.activeOrders[id]; ok {
 		delete(s.activeOrders, id) // Deleted from active data once served!
 		o.Status = "served"
-		o.ServedAt = time.Now().UTC().Format(time.RFC3339)
-		if servedBy != "" {
-			o.ServedBy = servedBy
-		} else {
-			o.ServedBy = "Staff"
-		}
+		o.ServedAt = now
+		o.ServedBy = servedBy
 		s.servedOrders[id] = o
 		s.saveToFile()
 		return o, true
 	}
 
-	return Order{}, false
+	// If not found in active (e.g. order was placed offline or via self-contained QR)
+	// Still create served entry so subsequent queries know it is served
+	o := Order{
+		OrderID:  id,
+		Status:   "served",
+		ServedAt: now,
+		ServedBy: servedBy,
+	}
+	s.servedOrders[id] = o
+	s.saveToFile()
+	return o, true
 }
 
 func (s *Store) ListServed() []Order {

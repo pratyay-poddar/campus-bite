@@ -122,7 +122,9 @@
     document.getElementById('profileUsername').textContent = `@${student.username || '—'}`;
   }
 
-  let allOrders = [];
+  let allOrders     = [];
+  let currentFilter = 'all';
+  const activeSSEs  = {};
 
   // Helper to ensure every order has compact ASCII payload for cross-device scanning
   function getOrderQRPayload(order) {
@@ -144,30 +146,57 @@
       if (!key || !key.startsWith('order_ORD-')) continue;
       try {
         const o = JSON.parse(localStorage.getItem(key));
-        if (o.studentUsername === student.username) allOrders.push(o);
+        if (!student.username || o.studentUsername === student.username || !o.studentUsername) {
+          allOrders.push(o);
+        }
       } catch(e) {}
     }
     allOrders.sort((a,b) => new Date(b.placedAt) - new Date(a.placedAt));
+    updateStatsAndRender();
+    checkPendingOrdersStatus();
+  }
 
+  function updateStatsAndRender() {
     const totalSpend = allOrders.reduce((s,o) => s + (o.total||0), 0);
     const served     = allOrders.filter(o => o.status === 'served').length;
     document.getElementById('statTotal').textContent  = allOrders.length;
     document.getElementById('statServed').textContent = served;
     document.getElementById('statSpend').textContent  = `₹${Math.round(totalSpend)}`;
-    renderOrders(allOrders);
+
+    const filtered = currentFilter === 'all'
+      ? allOrders
+      : allOrders.filter(o => o.status === currentFilter);
+    renderOrders(filtered);
   }
 
   function filterOrders(filter, btn) {
+    currentFilter = filter;
     document.querySelectorAll('.of-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    renderOrders(filter === 'all' ? allOrders : allOrders.filter(o => o.status === filter));
+    if (btn) btn.classList.add('active');
+    updateStatsAndRender();
   }
 
   function renderOrders(orders) {
     const grid  = document.getElementById('ordersGrid');
     const empty = document.getElementById('noOrders');
     if (orders.length === 0) {
-      grid.innerHTML = ''; grid.appendChild(empty); empty.style.display = 'block'; return;
+      grid.innerHTML = '';
+      grid.appendChild(empty);
+      empty.style.display = 'block';
+
+      const emptyTitle = empty.querySelector('h3');
+      const emptyDesc  = empty.querySelector('p');
+      if (currentFilter === 'pending') {
+        if (emptyTitle) emptyTitle.textContent = 'No pending orders';
+        if (emptyDesc)  emptyDesc.textContent  = 'All your orders have been served! Check the "Served" tab.';
+      } else if (currentFilter === 'served') {
+        if (emptyTitle) emptyTitle.textContent = 'No served orders yet';
+        if (emptyDesc)  emptyDesc.textContent  = 'Show your pending order QR at the counter to collect your food.';
+      } else {
+        if (emptyTitle) emptyTitle.textContent = 'No orders yet';
+        if (emptyDesc)  emptyDesc.textContent  = 'Your confirmed orders will appear here with QR codes.';
+      }
+      return;
     }
     empty.style.display = 'none';
 
@@ -175,9 +204,9 @@
       const isServed = o.status === 'served';
       const placedAt = new Date(o.placedAt).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
       const servedAt = o.servedAt ? new Date(o.servedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : null;
-      const itemsList = o.items.map(i => `<span class="recap-item">${i.emoji} ${i.name} ×${i.qty}</span>`).join('');
+      const itemsList = (o.items || []).map(i => `<span class="recap-item">${i.emoji || '🍽️'} ${i.name} ×${i.qty}</span>`).join('');
       return `
-        <div class="order-history-card ${isServed?'served':'pending'}">
+        <div class="order-history-card ${isServed?'served':'pending'}" id="card-${o.orderId}">
           <div class="ohc-header">
             <div><div class="ohc-id">${o.orderId}</div><div class="ohc-date">${placedAt}</div></div>
             <span class="ohc-status ${isServed?'served':'pending'}">${isServed?'✅ Served':'⏳ Pending'}</span>
@@ -207,6 +236,207 @@
     });
   }
 
+  // ─── APPLY SERVED STATUS & MOVE TO SERVED SECTION ────────────
+  function applyOrderServed(orderId, servedAt, servedBy) {
+    let order = allOrders.find(o => o.orderId === orderId);
+
+    if (!order) {
+      const local = localStorage.getItem(`order_${orderId}`);
+      if (local) {
+        try {
+          order = JSON.parse(local);
+          allOrders.unshift(order);
+        } catch(e) {}
+      }
+    }
+
+    if (!order) return;
+
+    // Check if already marked served
+    if (order.status === 'served') return;
+
+    order.status   = 'served';
+    order.servedAt = servedAt || new Date().toISOString();
+    order.servedBy = servedBy || 'Staff';
+
+    // Persist to localStorage
+    try {
+      localStorage.setItem(`order_${orderId}`, JSON.stringify(order));
+    } catch(e) {}
+
+    // Update Big QR modal if open for this order
+    if (activeBigOrderId === orderId) {
+      const studentEl = document.getElementById('bigQRStudent');
+      if (studentEl) {
+        const timeStr = new Date(order.servedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        studentEl.innerHTML = `${order.student}${order.studentRollNo ? ' • ' + order.studentRollNo : ''}
+          <div style="margin-top:6px; color:#22543d; background:#c6f6d5; padding:6px 10px; border-radius:8px; font-weight:700;">
+            ✅ Served at ${timeStr} by ${order.servedBy}!
+          </div>`;
+      }
+    }
+
+    // Refresh display (moves item to Served section or updates badge)
+    updateStatsAndRender();
+
+    // Audio & Toast Notification
+    playChime();
+    showStudentToast(`🎉 Order <strong>${orderId}</strong> has been marked as <strong>SERVED</strong>! Enjoy your meal!`, 'success');
+  }
+
+  // ─── AUDIO NOTIFICATION CHIME ────────────────────────────────
+  function playChime() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'triangle';
+      osc1.frequency.setValueAtTime(587.33, ctx.currentTime);
+      gain1.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start();
+      osc1.stop(ctx.currentTime + 0.25);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
+      gain2.gain.setValueAtTime(0.25, ctx.currentTime + 0.15);
+      gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(ctx.currentTime + 0.15);
+      osc2.stop(ctx.currentTime + 0.5);
+    } catch(e) {}
+    if (navigator.vibrate) navigator.vibrate([100, 50, 150]);
+  }
+
+  // ─── FLOATING TOAST NOTIFICATION ─────────────────────────────
+  function showStudentToast(msg, type = 'success') {
+    let t = document.getElementById('studentToast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'studentToast';
+      t.style.cssText = `
+        position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+        padding: 16px 26px; border-radius: 50px; font-family: 'Poppins', sans-serif;
+        font-size: 0.95rem; font-weight: 600; z-index: 99999;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.3); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        display: flex; align-items: center; gap: 10px; max-width: 90%; text-align: center;
+      `;
+      document.body.appendChild(t);
+    }
+    t.style.background = type === 'warn' ? '#e53e3e' : '#22543d';
+    t.style.color = '#fff';
+    t.innerHTML = msg;
+    t.style.opacity = '1';
+    t.style.transform = 'translateX(-50%) translateY(0)';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => {
+      t.style.opacity = '0';
+      t.style.transform = 'translateX(-50%) translateY(20px)';
+    }, 4500);
+  }
+
+  // ─── TIER 1: SAME-DEVICE INSTANT SYNC (BROADCAST & STORAGE) ──
+  try {
+    const syncChannel = new BroadcastChannel('campusbite_sync');
+    syncChannel.onmessage = (event) => {
+      if (event.data && event.data.type === 'ORDER_SERVED') {
+        applyOrderServed(event.data.orderId, event.data.servedAt, event.data.servedBy);
+      }
+    };
+  } catch(e) {}
+
+  window.addEventListener('storage', (e) => {
+    if (!e.newValue) return;
+    if (e.key === 'campusbite_last_served') {
+      try {
+        const d = JSON.parse(e.newValue);
+        if (d && d.orderId) applyOrderServed(d.orderId, d.servedAt, d.servedBy);
+      } catch(err) {}
+    }
+    if (e.key && e.key.startsWith('order_ORD-')) {
+      try {
+        const d = JSON.parse(e.newValue);
+        if (d && d.status === 'served') applyOrderServed(d.orderId, d.servedAt, d.servedBy);
+      } catch(err) {}
+    }
+  });
+
+  // ─── TIER 2 & 3: CROSS-DEVICE SYNC (GO BACKEND & NTFY.SH) ────
+  function watchPendingOrder(orderId) {
+    const cleanId = String(orderId).replace(/[^a-zA-Z0-9]/g, '');
+    if (activeSSEs[cleanId]) return;
+    try {
+      const sse = new EventSource(`https://ntfy.sh/campusbite_ord_${cleanId}/sse`);
+      sse.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.message) {
+            const payload = typeof data.message === 'string' ? JSON.parse(data.message) : data.message;
+            if (payload && payload.status === 'served') {
+              applyOrderServed(orderId, payload.servedAt, payload.servedBy);
+              sse.close();
+              delete activeSSEs[cleanId];
+            }
+          }
+        } catch(err) {}
+      };
+      sse.onerror = () => { /* fallback polling continues */ };
+      activeSSEs[cleanId] = sse;
+    } catch(e) {}
+  }
+
+  async function checkPendingOrdersStatus() {
+    const pending = allOrders.filter(o => o.status === 'pending');
+    if (pending.length === 0) return;
+
+    for (const o of pending) {
+      watchPendingOrder(o.orderId);
+
+      // 1. Check Go Backend API if connected
+      if (typeof API_URL !== 'undefined' && API_URL) {
+        try {
+          const res = await fetch(`${API_URL}/api/orders/${o.orderId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.status === 'served') {
+              applyOrderServed(o.orderId, data.servedAt, data.servedBy);
+              continue;
+            }
+          }
+        } catch(e) {}
+      }
+
+      // 2. Poll ntfy.sh (Cross-device GitHub Pages relay fallback)
+      const cleanId = String(o.orderId).replace(/[^a-zA-Z0-9]/g, '');
+      try {
+        const res = await fetch(`https://ntfy.sh/campusbite_ord_${cleanId}/json?poll=1`);
+        if (res.ok) {
+          const text = await res.text();
+          const lines = text.trim().split('\n');
+          for (const line of lines) {
+            if (!line) continue;
+            try {
+              const parsed = JSON.parse(line);
+              const msgData = typeof parsed.message === 'string' ? JSON.parse(parsed.message) : parsed.message;
+              if (msgData && msgData.status === 'served') {
+                applyOrderServed(o.orderId, msgData.servedAt, msgData.servedBy);
+                break;
+              }
+            } catch(err) {}
+          }
+        }
+      } catch(e) {}
+    }
+  }
+
+  // Poll for updates every 2.5 seconds
+  setInterval(checkPendingOrdersStatus, 2500);
+
   /* ── BIG QR MODAL ── */
   let activeBigOrderId = null;
 
@@ -215,9 +445,17 @@
     if (!order) return;
     activeBigOrderId = orderId;
 
+    const isServed = order.status === 'served';
     document.getElementById('bigQROrderId').textContent = order.orderId;
-    document.getElementById('bigQRStudent').textContent = `${order.student}${order.studentRollNo ? ' • ' + order.studentRollNo : ''}`;
-    document.getElementById('bigQRItems').innerHTML    = (order.items || []).map(i => `${i.emoji} <strong>${i.name}</strong> × ${i.qty}`).join('<br>');
+    let studentHtml = `${order.student}${order.studentRollNo ? ' • ' + order.studentRollNo : ''}`;
+    if (isServed) {
+      const timeStr = order.servedAt ? new Date(order.servedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
+      studentHtml += `<div style="margin-top:6px; color:#22543d; background:#c6f6d5; padding:6px 10px; border-radius:8px; font-weight:700;">
+        ✅ Served${timeStr ? ' at ' + timeStr : ''}${order.servedBy ? ' by ' + order.servedBy : ''}!
+      </div>`;
+    }
+    document.getElementById('bigQRStudent').innerHTML = studentHtml;
+    document.getElementById('bigQRItems').innerHTML    = (order.items || []).map(i => `${i.emoji || '🍽️'} <strong>${i.name}</strong> × ${i.qty}`).join('<br>');
 
     // Open modal first
     document.getElementById('bigQRModal').style.display = 'flex';

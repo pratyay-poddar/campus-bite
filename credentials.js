@@ -43,7 +43,17 @@ const WAITER_CREDENTIALS = STAFF_CREDENTIALS;
 
 // Backend API Configuration (Optional: connects to Go backend if running)
 // When running the Go server, it syncs orders in real time across devices
-const API_URL = (window.location.port === "8080") ? "" : "http://localhost:8080";
+let API_URL = "";
+if (typeof window !== "undefined") {
+  if (window.location.port === "8080") {
+    API_URL = "";
+  } else if (window.location.protocol === "http:" || window.location.protocol === "file:") {
+    API_URL = "http://localhost:8080";
+  } else {
+    // On HTTPS (e.g. GitHub Pages), avoid mixed content errors for localhost HTTP
+    API_URL = "";
+  }
+}
 
 /* Default canteen schedule
    ─────────────────────────────────────────────────────────────

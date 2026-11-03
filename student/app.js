@@ -278,6 +278,7 @@ function confirmPayment() {
   closeModal('paymentModal');
 
   // Display modal first so container has geometry
+  activePlacedOrderId = orderId;
   document.getElementById('orderIdDisplay').textContent = `Order ID: ${orderId}`;
   document.getElementById('orderItemsRecap').innerHTML  = orderItems.map(i => `${i.emoji} ${i.name} × ${i.qty}`).join('<br>');
   document.getElementById('successModal').style.display = 'flex';
@@ -285,7 +286,139 @@ function confirmPayment() {
   // Render SVG QR (guaranteed visible and sharp!)
   const qrBox = document.getElementById('orderQRCode');
   CampusBiteQR.render(qrBox, qrPayload, 220);
+
+  // Watch for served status across devices & tabs
+  watchPlacedOrder(orderId);
 }
+
+// ─── LIVE ORDER STATUS WATCHER ─────────────────────────────────
+let activePlacedOrderId = null;
+let activePlacedSSE     = null;
+
+function onActiveOrderServed(orderId, servedAt, servedBy) {
+  const localRaw = localStorage.getItem(`order_${orderId}`);
+  if (localRaw) {
+    try {
+      const o = JSON.parse(localRaw);
+      o.status   = 'served';
+      o.servedAt = servedAt || new Date().toISOString();
+      o.servedBy = servedBy || 'Staff';
+      localStorage.setItem(`order_${orderId}`, JSON.stringify(o));
+    } catch(e) {}
+  }
+
+  if (activePlacedOrderId === orderId) {
+    const modal = document.getElementById('successModal');
+    if (modal && modal.style.display !== 'none') {
+      const anim = modal.querySelector('.success-anim');
+      const h2   = modal.querySelector('h2');
+      const sub  = modal.querySelector('.success-sub');
+      if (anim) anim.textContent = '✅';
+      if (h2)   h2.textContent   = 'Order Served!';
+      const timeStr = new Date(servedAt || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      if (sub)  sub.innerHTML    = `<span style="color:#22543d;background:#c6f6d5;padding:6px 14px;border-radius:20px;font-weight:700;display:inline-block;margin-top:4px;">✅ Picked up at ${timeStr}${servedBy ? ' • Served by ' + servedBy : ''}</span>`;
+      showToast(`🎉 Order ${orderId} served! Enjoy your food!`, 'info');
+    }
+  }
+}
+
+function watchPlacedOrder(orderId) {
+  if (activePlacedSSE) {
+    try { activePlacedSSE.close(); } catch(e) {}
+    activePlacedSSE = null;
+  }
+
+  const cleanId = String(orderId).replace(/[^a-zA-Z0-9]/g, '');
+
+  // 1. SSE via ntfy.sh (instant push across phones)
+  try {
+    const sse = new EventSource(`https://ntfy.sh/campusbite_ord_${cleanId}/sse`);
+    sse.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.message) {
+          const payload = typeof data.message === 'string' ? JSON.parse(data.message) : data.message;
+          if (payload && payload.status === 'served') {
+            onActiveOrderServed(orderId, payload.servedAt, payload.servedBy);
+            sse.close();
+            activePlacedSSE = null;
+          }
+        }
+      } catch(err) {}
+    };
+    activePlacedSSE = sse;
+  } catch(e) {}
+
+  // 2. Polling loop
+  const pollTimer = setInterval(async () => {
+    if (activePlacedOrderId !== orderId) {
+      clearInterval(pollTimer);
+      return;
+    }
+
+    // Go Backend
+    if (typeof API_URL !== 'undefined' && API_URL) {
+      try {
+        const res = await fetch(`${API_URL}/api/orders/${orderId}`);
+        if (res.ok) {
+          const d = await res.json();
+          if (d && d.status === 'served') {
+            onActiveOrderServed(orderId, d.servedAt, d.servedBy);
+            clearInterval(pollTimer);
+            return;
+          }
+        }
+      } catch(e) {}
+    }
+
+    // ntfy.sh
+    try {
+      const res = await fetch(`https://ntfy.sh/campusbite_ord_${cleanId}/json?poll=1`);
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.trim().split('\n');
+        for (const line of lines) {
+          if (!line) continue;
+          try {
+            const parsed = JSON.parse(line);
+            const msgData = typeof parsed.message === 'string' ? JSON.parse(parsed.message) : parsed.message;
+            if (msgData && msgData.status === 'served') {
+              onActiveOrderServed(orderId, msgData.servedAt, msgData.servedBy);
+              clearInterval(pollTimer);
+              return;
+            }
+          } catch(err) {}
+        }
+      }
+    } catch(e) {}
+  }, 2500);
+}
+
+// Same-browser instant sync
+try {
+  const syncChannel = new BroadcastChannel('campusbite_sync');
+  syncChannel.onmessage = (e) => {
+    if (e.data && e.data.type === 'ORDER_SERVED') {
+      onActiveOrderServed(e.data.orderId, e.data.servedAt, e.data.servedBy);
+    }
+  };
+} catch(e) {}
+
+window.addEventListener('storage', (e) => {
+  if (!e.newValue) return;
+  if (e.key === 'campusbite_last_served') {
+    try {
+      const d = JSON.parse(e.newValue);
+      if (d && d.orderId) onActiveOrderServed(d.orderId, d.servedAt, d.servedBy);
+    } catch(err) {}
+  }
+  if (e.key && e.key.startsWith('order_ORD-')) {
+    try {
+      const d = JSON.parse(e.newValue);
+      if (d && d.status === 'served') onActiveOrderServed(d.orderId, d.servedAt, d.servedBy);
+    } catch(err) {}
+  }
+});
 
 function downloadQR() {
   const svg = document.querySelector('#orderQRCode svg');
@@ -307,7 +440,25 @@ function downloadQR() {
   img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
 }
 
-function startNewOrder() { cart = {}; closeModal('successModal'); updateAll(); }
+function startNewOrder() {
+  cart = {};
+  activePlacedOrderId = null;
+  if (activePlacedSSE) {
+    try { activePlacedSSE.close(); } catch(e) {}
+    activePlacedSSE = null;
+  }
+  closeModal('successModal');
+  const modal = document.getElementById('successModal');
+  if (modal) {
+    const anim = modal.querySelector('.success-anim');
+    const h2   = modal.querySelector('h2');
+    const sub  = modal.querySelector('.success-sub');
+    if (anim) anim.textContent = '🎉';
+    if (h2)   h2.textContent   = 'Order Confirmed!';
+    if (sub)  sub.textContent  = 'Show this QR code at the counter to pick up your order.';
+  }
+  updateAll();
+}
 function closeOrderSuccessModal() { startNewOrder(); }
 
 function showToast(msg, type='info') {

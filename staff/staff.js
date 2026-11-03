@@ -368,8 +368,32 @@ async function markOrderServed() {
   activeOrder.servedAt = new Date().toISOString();
   activeOrder.servedBy = staffUser ? staffUser.name : 'Staff';
 
-  // 1. Sync to Go backend if connected (deletes from active orders!)
-  if (typeof API_URL !== 'undefined') {
+  // 1. Broadcast instant sync for any open student tab/window on this device (< 5ms)
+  try {
+    const bc = new BroadcastChannel('campusbite_sync');
+    bc.postMessage({
+      type: 'ORDER_SERVED',
+      orderId: activeOrder.orderId,
+      status: 'served',
+      servedAt: activeOrder.servedAt,
+      servedBy: activeOrder.servedBy
+    });
+    setTimeout(() => { try { bc.close(); } catch(e) {} }, 1000);
+  } catch(e) {}
+
+  // 2. Pulse localStorage to trigger storage events across browser tabs
+  try {
+    localStorage.setItem('campusbite_last_served', JSON.stringify({
+      orderId: activeOrder.orderId,
+      status: 'served',
+      servedAt: activeOrder.servedAt,
+      servedBy: activeOrder.servedBy,
+      ts: Date.now()
+    }));
+  } catch(e) {}
+
+  // 3. Sync to Go backend if connected (moves active order to served store)
+  if (typeof API_URL !== 'undefined' && API_URL) {
     try {
       await fetch(`${API_URL}/api/orders/${activeOrder.orderId}/serve`, {
         method: 'POST',
@@ -379,10 +403,25 @@ async function markOrderServed() {
     } catch(e) {}
   }
 
-  // 2. Save to staff device served storage
+  // 4. Relay served event to ntfy.sh (enables instant cross-device sync on GitHub Pages)
+  try {
+    const cleanId = String(activeOrder.orderId).replace(/[^a-zA-Z0-9]/g, '');
+    fetch(`https://ntfy.sh/campusbite_ord_${cleanId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId: activeOrder.orderId,
+        status: 'served',
+        servedAt: activeOrder.servedAt,
+        servedBy: activeOrder.servedBy
+      })
+    }).catch(() => {});
+  } catch(e) {}
+
+  // 5. Save to staff device served storage
   saveServedRecord(activeOrder);
 
-  // 3. If present in local storage, update status
+  // 6. If present in local storage, update status
   const localRaw = localStorage.getItem(`order_${activeOrder.orderId}`);
   if (localRaw) {
     try {
