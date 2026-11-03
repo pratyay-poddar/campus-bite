@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CampusBite — Staff Scanner</title>
+  <link rel="stylesheet" href="../style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+  <script src="../credentials.js"></script>
+</head>
+<body class="staff-page">
+
+<script>
+  (function() {
+    if (sessionStorage.getItem('staff_logged_in') !== 'true') window.location.replace('login.html');
+  })();
+</script>
+
+<header class="header staff-header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">🧾</span>
+      <div>
+        <span class="logo-title">Staff Portal</span>
+        <span class="logo-sub">CampusBite — Counter</span>
+      </div>
+    </div>
+    <div class="staff-header-right">
+      <div class="staff-time" id="staffClock"></div>
+      <div class="staff-user-chip" id="staffUserChip">
+        <span id="staffUserAvatar">👤</span>
+        <div class="staff-user-info">
+          <span class="staff-user-name" id="staffUserName">—</span>
+          <span class="staff-user-role" id="staffUserRole">—</span>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="logout()">🚪 Logout</button>
+    </div>
+  </div>
+</header>
+
+<main class="staff-main">
+  <div class="staff-container">
+
+    <!-- SCANNER PANEL -->
+    <div class="scanner-panel">
+      <h2>📷 Scan Order QR Code</h2>
+      <p class="scanner-hint">Point the camera at the student's QR code</p>
+      <div class="video-wrapper">
+        <video id="scannerVideo" playsinline autoplay></video>
+        <canvas id="scannerCanvas" style="display:none;"></canvas>
+        <div class="scan-frame">
+          <div class="corner tl"></div><div class="corner tr"></div>
+          <div class="corner bl"></div><div class="corner br"></div>
+          <div class="scan-line"></div>
+        </div>
+        <div class="scanner-status" id="scannerStatus">
+          <div class="pulse-dot"></div><span>Scanning…</span>
+        </div>
+      </div>
+      <button class="start-cam-btn" id="startCamBtn" onclick="startCamera()">📷 Start Camera</button>
+      <button class="stop-cam-btn"  id="stopCamBtn"  onclick="stopCamera()" style="display:none;">⏹ Stop Camera</button>
+      <div class="manual-lookup">
+        <p>Or enter Order ID manually:</p>
+        <div class="lookup-row">
+          <input type="text" id="manualOrderId" placeholder="e.g. ORD-20261104-7X3K"/>
+          <button onclick="lookupManual()">🔍 Look Up</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ORDER DISPLAY PANEL -->
+    <div class="order-display-panel">
+      <div class="order-display-empty" id="orderDisplayEmpty">
+        <div class="scan-placeholder">🔍</div>
+        <h3>No order scanned yet</h3>
+        <p>Scan a student's QR code to see their order details</p>
+      </div>
+      <div class="order-card" id="orderCard" style="display:none;">
+        <div class="order-card-header">
+          <div class="order-card-id"     id="displayOrderId"></div>
+          <div class="order-card-status" id="displayOrderStatus"></div>
+        </div>
+        <div class="order-card-customer">
+          <span class="label">👤 Student</span>
+          <span class="value" id="displayCustomer"></span>
+        </div>
+        <div class="order-card-time">
+          <span class="label">🕐 Ordered at</span>
+          <span class="value" id="displayTime"></span>
+        </div>
+        <hr class="divider"/>
+        <h3 class="items-title">📋 Items to Serve</h3>
+        <div class="serve-items" id="serveItems"></div>
+        <hr class="divider"/>
+        <div class="order-total-row">
+          <span>Total Paid</span>
+          <span class="total-paid" id="displayTotal"></span>
+        </div>
+        <div class="order-actions-staff">
+          <button class="mark-ready-btn" id="markReadyBtn" onclick="markOrderServed()">✅ Mark as Served</button>
+          <button class="scan-next-btn"  onclick="resetScan()">📷 Scan Next</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="served-log-section">
+    <div class="served-log-header">
+      <h3>📋 Today's Served Orders</h3>
+      <span class="served-count" id="servedCount">0 served</span>
+    </div>
+    <div id="servedLog" class="served-log"></div>
+  </div>
+</main>
+
+<script src="staff.js"></script>
+</body>
+</html>
+

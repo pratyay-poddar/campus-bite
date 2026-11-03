@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CampusBite — Student Login</title>
+  <link rel="stylesheet" href="../style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+</head>
+<body class="login-page">
+<div class="login-bg">
+  <div class="login-blobs">
+    <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+  </div>
+  <div class="login-card student-login-card">
+    <div class="login-logo">
+      <span class="login-logo-icon">🍽️</span>
+      <div>
+        <span class="login-logo-title">CampusBite</span>
+        <span class="login-logo-sub">Student Portal</span>
+      </div>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">Sign In</button>
+      <button class="auth-tab" id="tabRegister" onclick="switchTab('register')">Register</button>
+    </div>
+    <div class="login-error" id="authError" style="display:none;"></div>
+    <div class="auth-success" id="authSuccess" style="display:none;"></div>
+
+    <!-- LOGIN -->
+    <form class="login-form" id="loginForm" onsubmit="handleLogin(event)" style="display:flex;">
+      <div class="form-group">
+        <label>Username</label>
+        <div class="input-wrap">
+          <span class="input-icon">👤</span>
+          <input type="text" id="loginUsername" placeholder="Your username" autocomplete="username" required/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="input-wrap">
+          <span class="input-icon">🔒</span>
+          <input type="password" id="loginPassword" placeholder="Your password" autocomplete="current-password" required/>
+          <button type="button" class="toggle-pw" onclick="togglePw('loginPassword',this)">👁️</button>
+        </div>
+      </div>
+      <button type="submit" class="login-btn" id="loginBtn">
+        <span class="btn-text">Sign In →</span>
+        <span class="btn-loader" style="display:none;">⏳ Signing in…</span>
+      </button>
+      <p class="switch-hint">No account? <a href="#" onclick="switchTab('register')">Register here</a></p>
+    </form>
+
+    <!-- REGISTER -->
+    <form class="login-form" id="registerForm" onsubmit="handleRegister(event)" style="display:none;">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Full Name</label>
+          <div class="input-wrap">
+            <span class="input-icon">🧑</span>
+            <input type="text" id="regName" placeholder="e.g. Priya Sharma" required/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Roll Number</label>
+          <div class="input-wrap">
+            <span class="input-icon">🎓</span>
+            <input type="text" id="regRoll" placeholder="e.g. 21CS045" required/>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Username</label>
+        <div class="input-wrap">
+          <span class="input-icon">👤</span>
+          <input type="text" id="regUsername" placeholder="Choose a username" autocomplete="off" required/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="input-wrap">
+          <span class="input-icon">🔒</span>
+          <input type="password" id="regPassword" placeholder="Min. 6 characters" autocomplete="new-password" required/>
+          <button type="button" class="toggle-pw" onclick="togglePw('regPassword',this)">👁️</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Confirm Password</label>
+        <div class="input-wrap">
+          <span class="input-icon">🔒</span>
+          <input type="password" id="regConfirm" placeholder="Repeat password" autocomplete="new-password" required/>
+        </div>
+      </div>
+      <button type="submit" class="login-btn" id="registerBtn">
+        <span class="btn-text">Create Account →</span>
+        <span class="btn-loader" style="display:none;">⏳ Creating…</span>
+      </button>
+      <p class="switch-hint">Already registered? <a href="#" onclick="switchTab('login')">Sign in</a></p>
+    </form>
+    <a href="index.html" class="back-to-menu">← Browse menu (view only)</a>
+  </div>
+</div>
+<script>
+  if (sessionStorage.getItem('student_logged_in') === 'true') window.location.replace('index.html');
+
+  function switchTab(tab) {
+    document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
+    document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
+    document.getElementById('loginForm').style.display    = tab === 'login'    ? 'flex' : 'none';
+    document.getElementById('registerForm').style.display = tab === 'register' ? 'flex' : 'none';
+    clearMsg();
+  }
+  function clearMsg() {
+    document.getElementById('authError').style.display = 'none';
+    document.getElementById('authSuccess').style.display = 'none';
+  }
+  function showError(msg) {
+    const el = document.getElementById('authError');
+    el.innerHTML = `<span>⚠️</span> ${msg}`; el.style.display = 'flex';
+    document.getElementById('authSuccess').style.display = 'none';
+    document.querySelector('.login-card').classList.add('shake');
+    setTimeout(() => document.querySelector('.login-card').classList.remove('shake'), 450);
+  }
+  function showSuccess(msg) {
+    document.getElementById('authSuccess').textContent = msg;
+    document.getElementById('authSuccess').style.display = 'block';
+    document.getElementById('authError').style.display = 'none';
+  }
+  function setLoading(formId, on) {
+    const btn = document.querySelector(`#${formId} .login-btn`);
+    btn.querySelector('.btn-text').style.display   = on ? 'none' : 'inline';
+    btn.querySelector('.btn-loader').style.display = on ? 'inline' : 'none';
+    btn.disabled = on;
+  }
+  function togglePw(id, btn) {
+    const inp = document.getElementById(id);
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+    btn.textContent = inp.type === 'password' ? '👁️' : '🙈';
+  }
+  function handleLogin(e) {
+    e.preventDefault(); clearMsg(); setLoading('loginForm', true);
+    const u = document.getElementById('loginUsername').value.trim();
+    const p = document.getElementById('loginPassword').value;
+    setTimeout(() => {
+      const stored = localStorage.getItem(`student_${u}`);
+      if (!stored) { showError('Username not found. Please register first.'); setLoading('loginForm', false); return; }
+      const student = JSON.parse(stored);
+      if (student.password !== p) { showError('Incorrect password.'); setLoading('loginForm', false); return; }
+      sessionStorage.setItem('student_logged_in', 'true');
+      sessionStorage.setItem('student_user', JSON.stringify(student));
+      window.location.replace('index.html');
+    }, 600);
+  }
+  function handleRegister(e) {
+    e.preventDefault(); clearMsg();
+    const name = document.getElementById('regName').value.trim();
+    const roll = document.getElementById('regRoll').value.trim();
+    const u    = document.getElementById('regUsername').value.trim();
+    const p    = document.getElementById('regPassword').value;
+    const c    = document.getElementById('regConfirm').value;
+    if (p !== c)   { showError('Passwords do not match.'); return; }
+    if (p.length < 6) { showError('Password must be at least 6 characters.'); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(u)) { showError('Username: letters, numbers and _ only.'); return; }
+    setLoading('registerForm', true);
+    setTimeout(() => {
+      if (localStorage.getItem(`student_${u}`)) { showError('Username already taken.'); setLoading('registerForm', false); return; }
+      localStorage.setItem(`student_${u}`, JSON.stringify({ name, rollNo: roll, username: u, password: p, registeredAt: new Date().toISOString() }));
+      showSuccess(`✅ Account created! Welcome, ${name}. Please sign in.`);
+      setLoading('registerForm', false);
+      setTimeout(() => switchTab('login'), 1500);
+    }, 600);
+  }
+</script>
+</body>
+</html>
+

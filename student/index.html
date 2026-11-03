@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CampusBite — College Canteen</title>
+  <link rel="stylesheet" href="../style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="../credentials.js"></script>
+</head>
+<body>
+<script>
+  if (sessionStorage.getItem('student_logged_in') !== 'true') window.location.replace('login.html');
+</script>
+
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">🍽️</span>
+      <div>
+        <span class="logo-title">CampusBite</span>
+        <span class="logo-sub">College Canteen Pre-Order</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="break-time-box" id="breakTimeBox">
+        <span class="break-label">🕐 Break at</span>
+        <input type="time" id="breakTimeInput" value="13:00" readonly title="Set by canteen staff" />
+        <span class="break-status" id="breakStatus"></span>
+      </div>
+      <a href="profile.html" class="student-chip" id="studentChip" title="My Profile">
+        <span class="student-avatar">🎓</span>
+        <div class="student-chip-info">
+          <span class="student-chip-name" id="chipName">—</span>
+          <span class="student-chip-roll" id="chipRoll">—</span>
+        </div>
+      </a>
+      <button class="cart-btn" onclick="toggleCart()">
+        🛒 Cart <span class="cart-badge" id="cartBadge">0</span>
+      </button>
+      <button class="logout-btn student-logout" onclick="studentLogout()" title="Logout">🚪</button>
+    </div>
+  </div>
+</header>
+
+<div class="closed-banner" id="closedBanner" style="display:none;"></div>
+<div class="schedule-info-bar" id="scheduleInfoBar"></div>
+
+<section class="hero">
+  <div class="hero-content">
+    <h1>Skip the Queue,<br/><span class="highlight">Pre-Order Now</span></h1>
+    <p>Order your canteen food before the break rush. Pay online, grab your QR code, and pick up instantly.</p>
+    <div class="hero-badges">
+      <span>✅ No waiting in line</span>
+      <span>✅ Fresh &amp; hot food</span>
+      <span>✅ Easy QR pickup</span>
+    </div>
+  </div>
+  <div class="hero-image">🍜</div>
+</section>
+
+<section class="menu-section">
+  <div class="container">
+    <h2 class="section-title">Today's Menu</h2>
+    <div class="category-filter">
+      <button class="cat-btn active" data-cat="all">All Items</button>
+      <button class="cat-btn" data-cat="meals">🍱 Meals</button>
+      <button class="cat-btn" data-cat="snacks">🥪 Snacks</button>
+      <button class="cat-btn" data-cat="beverages">☕ Beverages</button>
+      <button class="cat-btn" data-cat="sweets">🍮 Sweets</button>
+    </div>
+    <div class="menu-grid" id="menuGrid"></div>
+  </div>
+</section>
+
+<!-- CART -->
+<div class="cart-overlay" id="cartOverlay" onclick="toggleCart()"></div>
+<aside class="cart-sidebar" id="cartSidebar">
+  <div class="cart-header">
+    <h3>🛒 Your Order</h3>
+    <button class="close-cart" onclick="toggleCart()">✕</button>
+  </div>
+  <div class="cart-items" id="cartItems">
+    <div class="cart-empty"><span>🛒</span><p>Your cart is empty</p><small>Add items from the menu</small></div>
+  </div>
+  <div class="cart-footer" id="cartFooter" style="display:none;">
+    <div class="cart-summary">
+      <div class="summary-row"><span>Subtotal</span><span id="subtotal">₹0</span></div>
+      <div class="summary-row"><span>GST (5%)</span><span id="gstAmount">₹0</span></div>
+      <div class="summary-row total"><span>Total</span><span id="totalAmount">₹0</span></div>
+    </div>
+    <div class="cart-student-info" id="cartStudentInfo"></div>
+    <button class="pay-btn" onclick="proceedToPayment()">💳 Pay &amp; Get QR Code</button>
+  </div>
+</aside>
+
+<!-- PAYMENT MODAL -->
+<div class="modal-overlay" id="paymentModal" style="display:none;" onclick="if(event.target===this) closeModal('paymentModal')">
+  <div class="modal pay-modal">
+    <button class="modal-close" onclick="closeModal('paymentModal')" title="Close">✕</button>
+    <h2>💳 Payment</h2>
+    <div class="pay-summary" id="paySummary"></div>
+    <div class="pay-methods">
+      <p class="pay-method-label">Select Payment Method</p>
+      <div class="method-grid">
+        <label class="method-card"><input type="radio" name="payMethod" value="upi" checked/><span>📱 UPI</span></label>
+        <label class="method-card"><input type="radio" name="payMethod" value="card"/><span>💳 Card</span></label>
+        <label class="method-card"><input type="radio" name="payMethod" value="cash"/><span>💵 Cash</span></label>
+      </div>
+    </div>
+    <div class="upi-box" id="upiBox">
+      <p>Scan to pay via UPI</p>
+      <div class="upi-qr"><div id="upiQRCode"></div></div>
+      <div class="upi-id">UPI ID: <strong>canteen@upi</strong></div>
+    </div>
+    <button class="pay-confirm-btn" onclick="confirmPayment()">✅ Confirm Payment</button>
+  </div>
+</div>
+
+<!-- SUCCESS MODAL -->
+<div class="modal-overlay" id="successModal" style="display:none;" onclick="if(event.target===this) closeOrderSuccessModal()">
+  <div class="modal success-modal">
+    <button class="modal-close" onclick="closeOrderSuccessModal()" title="Close">✕</button>
+    <div class="success-anim">🎉</div>
+    <h2>Order Confirmed!</h2>
+    <p class="success-sub">Show this QR code at the counter to pick up your order.</p>
+    <div class="order-qr-box"><div id="orderQRCode"></div></div>
+    <div class="order-id-display" id="orderIdDisplay"></div>
+    <div class="order-items-recap" id="orderItemsRecap"></div>
+    <div class="order-actions">
+      <button onclick="downloadQR()" class="dl-btn">⬇️ Download QR</button>
+      <a href="profile.html" class="new-order-btn" style="text-decoration:none;display:flex;align-items:center;justify-content:center;">👤 My Profile</a>
+      <button onclick="startNewOrder()" class="new-order-btn">🛒 New Order</button>
+    </div>
+  </div>
+</div>
+
+<footer class="footer">
+  <p>CampusBite &copy; 2026 &nbsp;|&nbsp;
+     <a href="profile.html">👤 My Profile</a> &nbsp;|&nbsp;
+     <a href="../staff/login.html" target="_blank">🧾 Staff Portal</a>
+  </p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
+

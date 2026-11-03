@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CampusBite — Staff Login</title>
+  <link rel="stylesheet" href="../style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script src="../credentials.js"></script>
+</head>
+<body class="login-page">
+<div class="login-bg">
+  <div class="login-blobs">
+    <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+  </div>
+  <div class="login-card">
+    <div class="login-logo">
+      <span class="login-logo-icon">🧾</span>
+      <div>
+        <span class="login-logo-title">CampusBite</span>
+        <span class="login-logo-sub">Staff Portal</span>
+      </div>
+    </div>
+    <h2 class="login-heading">Staff Sign In 👋</h2>
+    <p class="login-subheading">Sign in to manage and serve orders at the counter</p>
+    <div class="login-error" id="loginError" style="display:none;"></div>
+    <form class="login-form" id="loginForm" onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label>Username</label>
+        <div class="input-wrap">
+          <span class="input-icon">👤</span>
+          <input type="text" id="username" placeholder="Staff username" autocomplete="username" required/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="input-wrap">
+          <span class="input-icon">🔒</span>
+          <input type="password" id="password" placeholder="Staff password" autocomplete="current-password" required/>
+          <button type="button" class="toggle-pw" id="togglePw" onclick="togglePassword()">👁️</button>
+        </div>
+      </div>
+      <button type="submit" class="login-btn" id="loginBtn">
+        <span class="btn-text">Sign In →</span>
+        <span class="btn-loader" style="display:none;">⏳ Signing in…</span>
+      </button>
+    </form>
+    <div class="login-hint"><strong>Demo:</strong> staff1 / canteen@123</div>
+    <a href="../student/index.html" class="back-to-menu">← Student Menu</a>
+  </div>
+</div>
+<script>
+  if (sessionStorage.getItem('staff_logged_in') === 'true') window.location.replace('index.html');
+
+  function handleLogin(e) {
+    e.preventDefault();
+    const errEl = document.getElementById('loginError');
+    const btn   = document.getElementById('loginBtn');
+    errEl.style.display = 'none';
+    btn.querySelector('.btn-text').style.display   = 'none';
+    btn.querySelector('.btn-loader').style.display = 'inline';
+    btn.disabled = true;
+    const u = document.getElementById('username').value.trim();
+    const p = document.getElementById('password').value;
+    setTimeout(() => {
+      const match = STAFF_CREDENTIALS.find(c => c.username === u && c.password === p);
+      if (match) {
+        sessionStorage.setItem('staff_logged_in', 'true');
+        sessionStorage.setItem('staff_user', JSON.stringify(match));
+        window.location.replace('index.html');
+      } else {
+        errEl.innerHTML = '<span>🔐</span> Invalid username or password.';
+        errEl.style.display = 'flex';
+        btn.querySelector('.btn-text').style.display   = 'inline';
+        btn.querySelector('.btn-loader').style.display = 'none';
+        btn.disabled = false;
+        document.querySelector('.login-card').classList.add('shake');
+        setTimeout(() => document.querySelector('.login-card').classList.remove('shake'), 500);
+      }
+    }, 700);
+  }
+  function togglePassword() {
+    const pw = document.getElementById('password');
+    const btn = document.getElementById('togglePw');
+    pw.type = pw.type === 'password' ? 'text' : 'password';
+    btn.textContent = pw.type === 'password' ? '👁️' : '🙈';
+  }
+</script>
+</body>
+</html>
+

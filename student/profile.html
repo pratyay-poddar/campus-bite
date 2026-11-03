@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CampusBite — My Profile</title>
+  <link rel="stylesheet" href="../style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body class="profile-page">
+<script>
+  if (sessionStorage.getItem('student_logged_in') !== 'true') window.location.replace('login.html');
+</script>
+
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <a href="index.html" style="display:flex;align-items:center;gap:12px;text-decoration:none;">
+        <span class="logo-icon">🍽️</span>
+        <div>
+          <span class="logo-title">CampusBite</span>
+          <span class="logo-sub">My Profile</span>
+        </div>
+      </a>
+    </div>
+    <div class="header-right">
+      <div class="student-chip">
+        <span class="student-avatar">🎓</span>
+        <div class="student-chip-info">
+          <span class="student-chip-name" id="chipName">—</span>
+          <span class="student-chip-roll" id="chipRoll">—</span>
+        </div>
+      </div>
+      <a href="index.html" class="cart-btn" style="text-decoration:none;">🍽️ Order More</a>
+      <button class="logout-btn student-logout" onclick="studentLogout()" title="Logout">🚪</button>
+    </div>
+  </div>
+</header>
+
+<section class="profile-hero">
+  <div class="profile-hero-inner">
+    <div class="profile-avatar-big">🎓</div>
+    <div class="profile-info">
+      <h1 id="profileName">—</h1>
+      <p id="profileRoll" class="profile-roll">—</p>
+      <p id="profileUsername" class="profile-username">—</p>
+      <div class="profile-stats">
+        <div class="stat-box"><span id="statTotal">0</span><label>Orders</label></div>
+        <div class="stat-box"><span id="statServed">0</span><label>Served</label></div>
+        <div class="stat-box"><span id="statSpend">₹0</span><label>Spent</label></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="profile-orders">
+  <div class="container">
+    <div class="profile-orders-header">
+      <h2>🧾 My Orders</h2>
+      <div class="order-filter">
+        <button class="of-btn active" onclick="filterOrders('all',this)">All</button>
+        <button class="of-btn" onclick="filterOrders('pending',this)">⏳ Pending</button>
+        <button class="of-btn" onclick="filterOrders('served',this)">✅ Served</button>
+      </div>
+    </div>
+    <div class="orders-grid" id="ordersGrid">
+      <div class="no-orders" id="noOrders">
+        <span>🛒</span>
+        <h3>No orders yet</h3>
+        <p>Your confirmed orders will appear here with QR codes.</p>
+        <a href="index.html" class="cart-btn" style="text-decoration:none;display:inline-flex;margin-top:8px;">Start Ordering →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <p>CampusBite &copy; 2026 &nbsp;|&nbsp; <a href="../staff/login.html" target="_blank">🧾 Staff Portal</a></p>
+</footer>
+
+<script>
+  const student = JSON.parse(sessionStorage.getItem('student_user') || '{}');
+
+  function studentLogout() {
+    if (confirm('Log out of CampusBite?')) {
+      sessionStorage.removeItem('student_logged_in');
+      sessionStorage.removeItem('student_user');
+      window.location.replace('login.html');
+    }
+  }
+
+  function initProfile() {
+    document.getElementById('chipName').textContent        = student.name   || '—';
+    document.getElementById('chipRoll').textContent        = student.rollNo || '—';
+    document.getElementById('profileName').textContent     = student.name   || '—';
+    document.getElementById('profileRoll').textContent     = `Roll No: ${student.rollNo || '—'}`;
+    document.getElementById('profileUsername').textContent = `@${student.username || '—'}`;
+  }
+
+  let allOrders = [];
+
+  function loadOrders() {
+    allOrders = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith('order_ORD-')) continue;
+      try {
+        const o = JSON.parse(localStorage.getItem(key));
+        if (o.studentUsername === student.username) allOrders.push(o);
+      } catch(e) {}
+    }
+    allOrders.sort((a,b) => new Date(b.placedAt) - new Date(a.placedAt));
+
+    const totalSpend = allOrders.reduce((s,o) => s + (o.total||0), 0);
+    const served     = allOrders.filter(o => o.status === 'served').length;
+    document.getElementById('statTotal').textContent  = allOrders.length;
+    document.getElementById('statServed').textContent = served;
+    document.getElementById('statSpend').textContent  = `₹${Math.round(totalSpend)}`;
+    renderOrders(allOrders);
+  }
+
+  function filterOrders(filter, btn) {
+    document.querySelectorAll('.of-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderOrders(filter === 'all' ? allOrders : allOrders.filter(o => o.status === filter));
+  }
+
+  function renderOrders(orders) {
+    const grid  = document.getElementById('ordersGrid');
+    const empty = document.getElementById('noOrders');
+    if (orders.length === 0) {
+      grid.innerHTML = ''; grid.appendChild(empty); empty.style.display = 'block'; return;
+    }
+    empty.style.display = 'none';
+    grid.innerHTML = orders.map((o,idx) => {
+      const isServed = o.status === 'served';
+      const placedAt = new Date(o.placedAt).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      const servedAt = o.servedAt ? new Date(o.servedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : null;
+      const itemsList = o.items.map(i => `<span class="recap-item">${i.emoji} ${i.name} ×${i.qty}</span>`).join('');
+      return `
+        <div class="order-history-card ${isServed?'served':'pending'}">
+          <div class="ohc-header">
+            <div><div class="ohc-id">${o.orderId}</div><div class="ohc-date">${placedAt}</div></div>
+            <span class="ohc-status ${isServed?'served':'pending'}">${isServed?'✅ Served':'⏳ Pending'}</span>
+          </div>
+          <div class="ohc-items">${itemsList}</div>
+          <div class="ohc-qr-row">
+            <div class="ohc-qr-wrap">
+              <div id="qr-${idx}" class="ohc-qr"></div>
+              <p class="qr-label">Show at counter</p>
+            </div>
+            <div class="ohc-meta">
+              <div class="ohc-total">₹${Math.round(o.total)}</div>
+              ${servedAt ? `<div class="ohc-served-at">Served at ${servedAt}</div>` : ''}
+              ${o.servedBy ? `<div class="ohc-served-by">By ${o.servedBy}</div>` : ''}
+              <button class="dl-qr-btn" onclick="downloadQR(${idx},'${o.orderId}')">⬇️ Download QR</button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    orders.forEach((o,idx) => {
+      const container = document.getElementById(`qr-${idx}`);
+      if (!container || container.dataset.rendered) return;
+      new QRCode(container, {
+        text: o.orderId, width: 120, height: 120,
+        colorDark: o.status === 'served' ? '#38a169' : '#2d3748',
+        colorLight: '#fff', correctLevel: QRCode.CorrectLevel.H,
+      });
+      container.dataset.rendered = 'true';
+    });
+  }
+
+  function downloadQR(idx, orderId) {
+    const c = document.getElementById(`qr-${idx}`);
+    const canvas = c && c.querySelector('canvas');
+    const img    = c && c.querySelector('img');
+    const src    = canvas ? canvas.toDataURL() : (img ? img.src : null);
+    if (!src) return;
+    const link = document.createElement('a');
+    link.download = `order-${orderId}.png`; link.href = src; link.click();
+  }
+
+  initProfile();
+  loadOrders();
+</script>
+</body>
+</html>
+
