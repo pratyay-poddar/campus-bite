@@ -101,6 +101,23 @@ function lookupManual() {
   input.value = '';
 }
 
+const ITEM_EMOJIS = {
+  "Veg Thali": "🍱", "Chicken Thali": "🍗", "Egg Rice": "🍳", "Pav Bhaji": "🥘",
+  "Rajma Chawal": "🫘", "Chole Bhature": "🧆", "Samosa": "🥟", "Bread Omelette": "🍞",
+  "Veg Sandwich": "🥪", "Maggi": "🍜", "Paneer Roll": "🌯", "Chicken Roll": "🌯",
+  "French Fries": "🍟", "Boiled Egg": "🥚", "Masala Chai": "🍵", "Cold Coffee": "☕",
+  "Lassi": "🥛", "Lemon Soda": "🍋", "Buttermilk": "🫗", "Mango Juice": "🥭",
+  "Gulab Jamun": "🍮", "Halwa": "🍯", "Rasgulla": "⚪", "Ice Cream": "🍦"
+};
+
+function getItemEmoji(name, fallback) {
+  if (fallback && fallback !== '🍽️') return fallback;
+  for (let k in ITEM_EMOJIS) {
+    if (name && name.toLowerCase().includes(k.toLowerCase())) return ITEM_EMOJIS[k];
+  }
+  return "🍽️";
+}
+
 // ─── PROCESS SCANNED DATA (CROSS-DEVICE COMPATIBLE) ──────────
 function handleScannedData(rawText) {
   let order = null;
@@ -115,7 +132,7 @@ function handleScannedData(rawText) {
         studentRollNo:   parsed.r || '',
         items:           (parsed.items || []).map(i => ({
           name:  i.n || i.name,
-          emoji: i.e || i.emoji || '🍽️',
+          emoji: getItemEmoji(i.n || i.name, i.e || i.emoji),
           qty:   i.q || i.qty || 1,
           price: i.p || i.price || 0
         })),

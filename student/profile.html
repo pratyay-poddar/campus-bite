@@ -6,7 +6,7 @@
   <title>CampusBite — My Profile</title>
   <link rel="stylesheet" href="../style.css"/>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="../qr-code.js"></script>
 </head>
 <body class="profile-page">
 <script>
@@ -122,15 +122,14 @@
 
   let allOrders = [];
 
-  // Helper to ensure every order has self-contained payload for GitHub Pages cross-device scanning
+  // Helper to ensure every order has compact ASCII payload for cross-device scanning
   function getOrderQRPayload(order) {
-    if (order.qrData) return order.qrData;
     return JSON.stringify({
       cb: "1",
       id: order.orderId,
       s: order.student || 'Student',
       r: order.studentRollNo || '',
-      items: (order.items || []).map(i => ({ n: i.name, e: i.emoji, q: i.qty, p: i.price })),
+      items: (order.items || []).map(i => ({ n: i.name, q: i.qty, p: i.price })),
       tot: Math.round(order.total || 0),
       t: order.placedAt || new Date().toISOString()
     });
@@ -198,23 +197,11 @@
         </div>`;
     }).join('');
 
-    // Render clean QR codes into each card
+    // Render clean SVG QR codes into each card
     orders.forEach((o,idx) => {
       const container = document.getElementById(`qr-${idx}`);
       if (!container) return;
-      container.innerHTML = '';
-      try {
-        new QRCode(container, {
-          text: getOrderQRPayload(o),
-          width: 120,
-          height: 120,
-          colorDark: o.status === 'served' ? '#2f855a' : '#1a202c',
-          colorLight: '#ffffff',
-          correctLevel: QRCode.CorrectLevel.M,
-        });
-      } catch(err) {
-        console.error('Failed generating QR for order:', o.orderId, err);
-      }
+      CampusBiteQR.render(container, getOrderQRPayload(o), 120);
     });
   }
 
@@ -230,46 +217,45 @@
     document.getElementById('bigQRStudent').textContent = `${order.student}${order.studentRollNo ? ' • ' + order.studentRollNo : ''}`;
     document.getElementById('bigQRItems').innerHTML    = (order.items || []).map(i => `${i.emoji} <strong>${i.name}</strong> × ${i.qty}`).join('<br>');
 
-    const qrBox = document.getElementById('bigQRCode');
-    qrBox.innerHTML = '';
-    new QRCode(qrBox, {
-      text: getOrderQRPayload(order),
-      width: 260,
-      height: 260,
-      colorDark: order.status === 'served' ? '#2f855a' : '#1a202c',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M,
-    });
-
+    // Open modal first
     document.getElementById('bigQRModal').style.display = 'flex';
+
+    // Render large 260px QR Code SVG
+    const qrBox = document.getElementById('bigQRCode');
+    CampusBiteQR.render(qrBox, getOrderQRPayload(order), 260);
   }
 
   function closeBigQRModal() {
     document.getElementById('bigQRModal').style.display = 'none';
   }
 
+  function downloadSVGAsPNG(svgElement, filename) {
+    if (!svgElement) return;
+    const svgData = new XMLSerializer().serializeToString(svgElement);
+    const canvas = document.createElement('canvas');
+    canvas.width = 400; canvas.height = 400;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = function() {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 400, 400);
+      ctx.drawImage(img, 0, 0, 400, 400);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    };
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+  }
+
   function downloadBigQR() {
-    const c = document.getElementById('bigQRCode');
-    const canvas = c && c.querySelector('canvas');
-    const img    = c && c.querySelector('img');
-    const src    = canvas ? canvas.toDataURL() : (img ? img.src : null);
-    if (!src) return;
-    const link = document.createElement('a');
-    link.download = `order-${activeBigOrderId || 'qr'}.png`;
-    link.href = src;
-    link.click();
+    const svg = document.querySelector('#bigQRCode svg');
+    if (svg) downloadSVGAsPNG(svg, `order-${activeBigOrderId || 'qr'}.png`);
   }
 
   function downloadOrderQR(idx, orderId) {
-    const c = document.getElementById(`qr-${idx}`);
-    const canvas = c && c.querySelector('canvas');
-    const img    = c && c.querySelector('img');
-    const src    = canvas ? canvas.toDataURL() : (img ? img.src : null);
-    if (!src) return;
-    const link = document.createElement('a');
-    link.download = `order-${orderId}.png`;
-    link.href = src;
-    link.click();
+    const svg = document.querySelector(`#qr-${idx} svg`);
+    if (svg) downloadSVGAsPNG(svg, `order-${orderId}.png`);
   }
 
   initProfile();

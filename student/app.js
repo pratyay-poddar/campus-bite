@@ -219,11 +219,9 @@ function proceedToPayment() {
   const gst = subtotal*0.05, total = subtotal+gst;
   summary += `<br><strong>Total (incl. GST): ${fmt(total)}</strong>`;
   document.getElementById('paySummary').innerHTML = summary;
-  document.getElementById('upiQRCode').innerHTML  = '';
-  new QRCode(document.getElementById('upiQRCode'), {
-    text: `upi://pay?pa=canteen@upi&pn=CampusBite&am=${total.toFixed(2)}&cu=INR`,
-    width:160, height:160, colorDark:'#2d3748', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M,
-  });
+  const upiBox = document.getElementById('upiQRCode');
+  upiBox.innerHTML = '';
+  CampusBiteQR.render(upiBox, `upi://pay?pa=canteen@upi&pn=CampusBite&am=${total.toFixed(2)}&cu=INR`, 160);
   document.getElementById('paymentModal').style.display = 'flex';
   toggleCart();
 }
@@ -241,13 +239,13 @@ function confirmPayment() {
   });
   const gst = subtotal*0.05, total = subtotal+gst;
 
-  // Build compact self-contained QR payload for cross-device scanning on GitHub Pages
+  // Build compact self-contained QR payload (pure ASCII, zero UTF-8 overflow)
   const qrPayload = JSON.stringify({
     cb: "1",
     id: orderId,
     s: currentStudent.name || 'Student',
     r: currentStudent.rollNo || '',
-    items: orderItems.map(i => ({ n: i.name, e: i.emoji, q: i.qty, p: i.price })),
+    items: orderItems.map(i => ({ n: i.name, q: i.qty, p: i.price })),
     tot: Math.round(total),
     t: new Date().toISOString()
   });
@@ -267,30 +265,34 @@ function confirmPayment() {
   localStorage.setItem(`order_${orderId}`, JSON.stringify(payload));
   closeModal('paymentModal');
 
-  // Generate ORDER QR (encodes self-contained payload)
-  const qrBox = document.getElementById('orderQRCode');
-  qrBox.innerHTML = '';
-  new QRCode(qrBox, {
-    text: qrPayload,
-    width: 220,
-    height: 220,
-    colorDark: '#1a202c',
-    colorLight: '#ffffff',
-    correctLevel: QRCode.CorrectLevel.M,
-  });
-
+  // Display modal first so container has geometry
   document.getElementById('orderIdDisplay').textContent = `Order ID: ${orderId}`;
   document.getElementById('orderItemsRecap').innerHTML  = orderItems.map(i => `${i.emoji} ${i.name} × ${i.qty}`).join('<br>');
   document.getElementById('successModal').style.display = 'flex';
+
+  // Render SVG QR (guaranteed visible and sharp!)
+  const qrBox = document.getElementById('orderQRCode');
+  CampusBiteQR.render(qrBox, qrPayload, 220);
 }
 
 function downloadQR() {
-  const canvas = document.querySelector('#orderQRCode canvas');
-  const img    = document.querySelector('#orderQRCode img');
-  const link   = document.createElement('a');
-  link.download = 'campusbite-order-qr.png';
-  link.href     = canvas ? canvas.toDataURL() : (img ? img.src : '');
-  if (link.href) link.click();
+  const svg = document.querySelector('#orderQRCode svg');
+  if (!svg) return;
+  const svgData = new XMLSerializer().serializeToString(svg);
+  const canvas = document.createElement('canvas');
+  canvas.width = 400; canvas.height = 400;
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = function() {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 400, 400);
+    ctx.drawImage(img, 0, 0, 400, 400);
+    const link = document.createElement('a');
+    link.download = 'campusbite-order-qr.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
+  img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
 }
 
 function startNewOrder() { cart = {}; closeModal('successModal'); updateAll(); }
