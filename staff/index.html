@@ -61,6 +61,8 @@
       </div>
       <button class="start-cam-btn" id="startCamBtn" onclick="startCamera()">📷 Start Camera</button>
       <button class="stop-cam-btn"  id="stopCamBtn"  onclick="stopCamera()" style="display:none;">⏹ Stop Camera</button>
+      <button class="start-cam-btn" style="background:#4a5568; margin-top:8px;" onclick="document.getElementById('qrFileInput').click()">📁 Scan from Photo / Screenshot</button>
+      <input type="file" id="qrFileInput" accept="image/*" style="display:none;" onchange="handleQRImageUpload(event)"/>
       <div class="manual-lookup">
         <p>Or enter Order ID manually:</p>
         <div class="lookup-row">

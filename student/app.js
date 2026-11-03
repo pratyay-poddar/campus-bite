@@ -263,6 +263,18 @@ function confirmPayment() {
   };
 
   localStorage.setItem(`order_${orderId}`, JSON.stringify(payload));
+
+  // Sync to Go backend if available (fire-and-forget for instant cross-device sync)
+  if (typeof API_URL !== 'undefined') {
+    fetch(`${API_URL}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(function() {
+      // Offline / GitHub Pages static mode — works seamlessly via QR payload
+    });
+  }
+
   closeModal('paymentModal');
 
   // Display modal first so container has geometry

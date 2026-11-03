@@ -1,5 +1,7 @@
 /* ============================================================
    staff.js  —  CampusBite Staff Scanner Portal (staff/)
+   Supports Hardware BarcodeDetector, jsQR, Image Upload,
+   and optional Go Backend Sync
    ============================================================ */
 
 // ─── AUTH ────────────────────────────────────────────────────
@@ -35,18 +37,53 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
+// ─── AUDIO & HAPTIC FEEDBACK ─────────────────────────────────
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch (e) {}
+  if (navigator.vibrate) navigator.vibrate(100);
+}
+
 // ─── CAMERA SCANNER ──────────────────────────────────────────
 let stream         = null;
 let scanInterval   = null;
 let currentRawCode = null;
 let activeOrder    = null;
+let barcodeDetector = null;
+
+if ('BarcodeDetector' in window) {
+  try {
+    barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
+  } catch (e) {
+    barcodeDetector = null;
+  }
+}
 
 async function startCamera() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 640 },
+        height: { ideal: 480 }
+      }
     });
     const video = document.getElementById('scannerVideo');
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('autoplay', 'true');
+    video.setAttribute('muted', 'true');
+    video.muted = true;
     video.srcObject = stream;
     await video.play();
 
@@ -54,9 +91,9 @@ async function startCamera() {
     document.getElementById('stopCamBtn').style.display   = 'block';
     document.getElementById('scannerStatus').style.display = 'flex';
 
-    scanInterval = setInterval(scanFrame, 250);
+    scanInterval = setInterval(scanFrame, 200);
   } catch (err) {
-    alert('Camera access denied or not available: ' + err.message);
+    alert('Camera could not start: ' + err.message + '\n\nTip: You can use the "Scan from Photo" button below to upload a screenshot of the QR code!');
   }
 }
 
@@ -68,37 +105,104 @@ function stopCamera() {
   document.getElementById('scannerStatus').style.display = 'none';
 }
 
-function scanFrame() {
+async function scanFrame() {
   const video  = document.getElementById('scannerVideo');
-  const canvas = document.getElementById('scannerCanvas');
-  if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+  if (!video || video.readyState < 2) return;
 
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // 1. Hardware BarcodeDetector if available (instant 60fps scanning!)
+  if (barcodeDetector) {
+    try {
+      const barcodes = await barcodeDetector.detect(video);
+      if (barcodes.length > 0 && barcodes[0].rawValue) {
+        const raw = barcodes[0].rawValue.trim();
+        if (raw !== currentRawCode) {
+          currentRawCode = raw;
+          playBeep();
+          handleScannedData(raw);
+        }
+        return;
+      }
+    } catch (e) {}
+  }
+
+  // 2. Fallback to jsQR with optimized downscaled canvas
+  if (typeof jsQR !== 'function') return;
+
+  const canvas = document.getElementById('scannerCanvas');
+  const targetW = Math.min(video.videoWidth || 640, 640);
+  const targetH = Math.min(video.videoHeight || 480, 480);
+  if (targetW === 0 || targetH === 0) return;
+
+  canvas.width  = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(video, 0, 0, targetW, targetH);
+  const imageData = ctx.getImageData(0, 0, targetW, targetH);
 
   const code = jsQR(imageData.data, imageData.width, imageData.height, {
-    inversionAttempts: 'dontInvert',
+    inversionAttempts: 'attemptBoth'
   });
 
   if (code && code.data) {
-    const rawData = code.data.trim();
-    if (rawData && rawData !== currentRawCode) {
-      currentRawCode = rawData;
-      handleScannedData(rawData);
+    const raw = code.data.trim();
+    if (raw && raw !== currentRawCode) {
+      currentRawCode = raw;
+      playBeep();
+      handleScannedData(raw);
     }
   }
 }
 
+// ─── IMAGE FILE SCANNER (FALLBACK FOR ANY DEVICE) ─────────────
+function handleQRImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = async function() {
+      // 1. Try BarcodeDetector
+      if (barcodeDetector) {
+        try {
+          const barcodes = await barcodeDetector.detect(img);
+          if (barcodes.length > 0 && barcodes[0].rawValue) {
+            playBeep();
+            handleScannedData(barcodes[0].rawValue.trim());
+            return;
+          }
+        } catch (err) {}
+      }
+
+      // 2. Try jsQR
+      const canvas = document.createElement('canvas');
+      canvas.width  = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'attemptBoth'
+      });
+      if (code && code.data) {
+        playBeep();
+        handleScannedData(code.data.trim());
+      } else {
+        alert('Could not find a valid QR code in that image. Try picking a clearer photo or hold the camera closer.');
+      }
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+}
+
 // ─── MANUAL LOOKUP ───────────────────────────────────────────
-function lookupManual() {
+async function lookupManual() {
   const input = document.getElementById('manualOrderId');
   const val   = input.value.trim();
   if (!val) return;
-  handleScannedData(val);
   input.value = '';
+  await handleScannedData(val);
 }
 
 const ITEM_EMOJIS = {
@@ -118,11 +222,11 @@ function getItemEmoji(name, fallback) {
   return "🍽️";
 }
 
-// ─── PROCESS SCANNED DATA (CROSS-DEVICE COMPATIBLE) ──────────
-function handleScannedData(rawText) {
+// ─── PROCESS SCANNED DATA ────────────────────────────────────
+async function handleScannedData(rawText) {
   let order = null;
 
-  // 1. Try decoding as self-contained JSON QR payload (enables GitHub Pages cross-device scanning!)
+  // 1. Try decoding self-contained JSON QR payload
   try {
     const parsed = JSON.parse(rawText);
     if (parsed && (parsed.id || parsed.cb || parsed.items)) {
@@ -141,11 +245,22 @@ function handleScannedData(rawText) {
         status:          'pending'
       };
     }
-  } catch (err) {
-    // Not a JSON string — could be an order ID string like ORD-20261104-XXXX
+  } catch (err) {}
+
+  // 2. Query Go backend API if available (handles cross-device when Go server is running)
+  if (!order && typeof API_URL !== 'undefined') {
+    try {
+      const res = await fetch(`${API_URL}/api/orders/${rawText}`);
+      if (res.ok) {
+        const backendOrder = await res.json();
+        if (backendOrder && backendOrder.orderId) {
+          order = backendOrder;
+        }
+      }
+    } catch (e) {}
   }
 
-  // 2. If not decoded from JSON payload, check local device storage (fallback)
+  // 3. Fallback: Check local storage
   if (!order) {
     const raw = localStorage.getItem(`order_${rawText}`) || localStorage.getItem(rawText);
     if (raw) {
@@ -153,7 +268,7 @@ function handleScannedData(rawText) {
     }
   }
 
-  // 3. If still not found, check if it was previously saved in staff's served records
+  // 4. Check if it was previously saved in staff's served records
   if (!order) {
     const servedRecord = getServedRecord(rawText);
     if (servedRecord) {
@@ -162,7 +277,7 @@ function handleScannedData(rawText) {
   }
 
   if (order) {
-    // Check if this specific order was already served on this staff device
+    // Check if already marked served on staff device
     const servedRecord = getServedRecord(order.orderId);
     if (servedRecord) {
       order.status   = 'served';
@@ -192,7 +307,6 @@ function displayOrder(order) {
   const timeStr  = isNaN(placedAt.getTime()) ? 'Just now' : placedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   document.getElementById('displayTime').textContent = timeStr;
 
-  // Items to hand over
   let itemsHtml = '';
   if (isServed) {
     itemsHtml += `
@@ -204,7 +318,7 @@ function displayOrder(order) {
 
   itemsHtml += (order.items || []).map(item => `
     <div class="serve-item">
-      <span class="si-emoji">${item.emoji}</span>
+      <span class="si-emoji">${item.emoji || getItemEmoji(item.name)}</span>
       <div class="si-info"><div class="si-name">${item.name}</div></div>
       <span class="si-qty">× ${item.qty}</span>
     </div>
@@ -244,17 +358,31 @@ function displayNotFound(query) {
 }
 
 // ─── MARK ORDER SERVED ───────────────────────────────────────
-function markOrderServed() {
-  if (!activeOrder) return;
+async function markOrderServed() {
+  if (!activeOrder) {
+    showStaffToast('⚠️ No active order selected to serve!', 'warn');
+    return;
+  }
 
   activeOrder.status   = 'served';
   activeOrder.servedAt = new Date().toISOString();
   activeOrder.servedBy = staffUser ? staffUser.name : 'Staff';
 
-  // Save to staff device served storage
+  // 1. Sync to Go backend if connected (deletes from active orders!)
+  if (typeof API_URL !== 'undefined') {
+    try {
+      await fetch(`${API_URL}/api/orders/${activeOrder.orderId}/serve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ servedBy: activeOrder.servedBy })
+      });
+    } catch(e) {}
+  }
+
+  // 2. Save to staff device served storage
   saveServedRecord(activeOrder);
 
-  // If order exists in local storage on this device, update it too
+  // 3. If present in local storage, update status
   const localRaw = localStorage.getItem(`order_${activeOrder.orderId}`);
   if (localRaw) {
     try {
@@ -266,7 +394,6 @@ function markOrderServed() {
     } catch(e) {}
   }
 
-  // Update display
   displayOrder(activeOrder);
   showStaffToast(`✅ Order ${activeOrder.orderId} marked as served!`, 'success');
   renderServedLog();
@@ -298,32 +425,34 @@ function getServedRecord(orderId) {
 
 function saveServedRecord(order) {
   const records = getStaffServedRecords();
-  // Filter out duplicate if existing
   const filtered = records.filter(r => r.orderId !== order.orderId);
   filtered.unshift(order);
   localStorage.setItem(SERVED_KEY, JSON.stringify(filtered));
 }
 
-// Delete a single served order record
-function deleteServedItem(orderId) {
+async function deleteServedItem(orderId) {
   const records  = getStaffServedRecords();
   const filtered = records.filter(r => r.orderId !== order.orderId);
   localStorage.setItem(SERVED_KEY, JSON.stringify(filtered));
 
-  // If also stored under order_ORD-..., remove it
   localStorage.removeItem(`order_${orderId}`);
+
+  // Delete on Go backend if connected
+  if (typeof API_URL !== 'undefined') {
+    try {
+      await fetch(`${API_URL}/api/served/${orderId}`, { method: 'DELETE' });
+    } catch(e) {}
+  }
 
   showStaffToast(`🗑️ Order ${orderId} record deleted.`, 'warn');
   renderServedLog();
 
-  // If currently displaying this order, reset it
   if (activeOrder && activeOrder.orderId === orderId) {
     resetScan();
   }
 }
 
-// Clear all served data (per user request: delete data once served)
-function clearAllServedHistory() {
+async function clearAllServedHistory() {
   const records = getStaffServedRecords();
   if (records.length === 0) {
     showStaffToast('History is already empty.', 'warn');
@@ -331,6 +460,14 @@ function clearAllServedHistory() {
   }
   if (confirm(`Delete all ${records.length} served order records from this device?`)) {
     localStorage.removeItem(SERVED_KEY);
+
+    // Clear on Go backend if connected
+    if (typeof API_URL !== 'undefined') {
+      try {
+        await fetch(`${API_URL}/api/served`, { method: 'DELETE' });
+      } catch(e) {}
+    }
+
     showStaffToast('🗑️ All served order records cleared.', 'warn');
     renderServedLog();
     resetScan();
@@ -338,10 +475,23 @@ function clearAllServedHistory() {
 }
 
 // ─── RENDER SERVED LOG ───────────────────────────────────────
-function renderServedLog() {
+async function renderServedLog() {
   const logEl   = document.getElementById('servedLog');
   const countEl = document.getElementById('servedCount');
-  const records = getStaffServedRecords();
+  let records   = getStaffServedRecords();
+
+  // Also pull served records from Go backend if connected
+  if (typeof API_URL !== 'undefined') {
+    try {
+      const res = await fetch(`${API_URL}/api/served`);
+      if (res.ok) {
+        const backendRecords = await res.json();
+        if (Array.isArray(backendRecords) && backendRecords.length > 0) {
+          records = backendRecords;
+        }
+      }
+    } catch(e) {}
+  }
 
   if (countEl) countEl.textContent = `${records.length} served`;
 
@@ -351,7 +501,7 @@ function renderServedLog() {
   }
 
   logEl.innerHTML = records.map(o => {
-    const itemList = (o.items || []).map(i => `${i.emoji} ${i.name} ×${i.qty}`).join(', ');
+    const itemList = (o.items || []).map(i => `${i.emoji || getItemEmoji(i.name)} ${i.name} ×${i.qty}`).join(', ');
     const servedAt = o.servedAt
       ? new Date(o.servedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
       : '';

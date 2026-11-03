@@ -41,6 +41,10 @@ const STAFF_CREDENTIALS = [
 // Alias for backwards compatibility
 const WAITER_CREDENTIALS = STAFF_CREDENTIALS;
 
+// Backend API Configuration (Optional: connects to Go backend if running)
+// When running the Go server, it syncs orders in real time across devices
+const API_URL = (window.location.port === "8080") ? "" : "http://localhost:8080";
+
 /* Default canteen schedule
    ─────────────────────────────────────────────────────────────
    openingTime  : When the canteen opens — students can start
